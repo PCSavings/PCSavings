@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>My PC Build</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header class="hero">
+      <p class="hero-sub">Build total</p>
+      <h1 class="total" id="total" aria-live="polite">$0.00</h1>
+      <p class="hero-note"><span id="count">0</span> new parts, plus RAM and SSD reused from my current PC.</p>
+
+      <div class="split" id="split" role="img" aria-label="Share of total price by part"></div>
+      <ul class="legend" id="legend"></ul>
+    </header>
+
+    <section class="saving" aria-label="Saving">
+      <div class="saving-head">
+        <h2>Saving</h2>
+        <p><span id="savedAmt">$0.00</span> of <span id="goalAmt"></span> <span id="savedPct">(0%)</span></p>
+      </div>
+      <div class="bar" id="bar" role="progressbar" aria-label="Saving progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="barFill"></span></div>
+    </section>
+
+    <section class="grid" id="parts" aria-label="Parts list"></section>
+
+    <section class="reuse" aria-label="Reused parts">
+      <h2>Carried over from my current PC</h2>
+      <div class="grid" id="reused"></div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Prices as listed when I picked each part. Check the store link for current pricing.</p>
+  </footer>
+
+  <script>
+    // Edit this list to change the site. price: null means no cost.
+    const parts = [
+      { type: "GPU", name: "Radeon RX 7600", model: "ASUS Dual RX 7600 O8G EVO", price: 274.99,
+        specs: ["8 GB GDDR6", "AMD RDNA 3"],
+        url: "https://www.asus.com/us/motherboards-components/graphics-cards/dual/dual-rx7600-o8g-evo/" },
+      { type: "CPU", name: "AMD Ryzen 5 5600", model: "6 cores, 12 threads", price: 132.95,
+        specs: ["Up to 4.4 GHz boost", "65 W", "Socket AM4"],
+        url: "https://www.newegg.com/p/3C6-00C4-00016?item=9SIC9DAMAG4410" },
+      { type: "Motherboard", name: "GIGABYTE B550M K", model: "Micro-ATX", price: 74.99,
+        specs: ["AMD B550", "Socket AM4", "DDR4"],
+        url: "https://www.newegg.com/gigabyte-b550m-k-micro-atx-motherboard-amd-b550-am4/p/N82E16813145434" },
+      { type: "Power supply", name: "MSI MAG A650BN", model: "650 W", price: 61.99,
+        specs: ["80 Plus Bronze", "ATX 12V"],
+        url: "https://www.newegg.com/msi-intel-atx-12v-650-w-80-plus-bronze-certified-power-supply-black-mag-a650bn/p/N82E16817701013" },
+      { type: "Cooler", name: "Thermalright Peerless Assassin 120 SE V3", model: "Air cooler", price: 47.90,
+        specs: ["120 mm", "AM4, AM5, LGA 1700"],
+        url: "https://www.newegg.com/thermalright-peerless-assassin-120-se-v3-peerless-assassin-120mm-am5-am4-lga-1851-1700-115x-1200/p/1YF-0038-000Z2" },
+      { type: "Case", name: "Montech AIR 100 ARGB", model: "Micro-ATX tower, white", price: 69.99,
+        specs: ["Micro-ATX / Mini-ITX", "ARGB lighting"],
+        url: "https://www.newegg.com/montech-micro-atx-mini-itx-cases-white/p/2AM-00CN-00032" }
+    ];
+
+    const reused = [
+      { type: "Memory", name: "16 GB DDR4 RAM", model: "2 × 8 GB sticks", price: null, specs: ["16 GB total", "DDR4", "Dual channel"] },
+      { type: "Storage", name: "512 GB SSD", model: "From current PC", price: null, specs: ["512 GB"] }
+    ];
+
+    const money = n => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+    const sum = parts.reduce((s, p) => s + p.price, 0);
+
+    function card(p, i) {
+      const el = document.createElement("article");
+      el.className = "card" + (p.price === null ? " card-reused" : "");
+      if (p.price !== null) el.style.setProperty("--hue", 185 + (i / (parts.length - 1)) * 130);
+      const price = p.price === null ? "Reused" : money(p.price);
+      const link = p.url ? `<a class="buy" href="${p.url}" target="_blank" rel="noopener">View listing</a>` : "";
+      el.innerHTML = `
+        <span class="tag">${p.type}</span>
+        <h3>${p.name}</h3>
+        <p class="model">${p.model}</p>
+        <ul class="specs">${p.specs.map(s => `<li>${s}</li>`).join("")}</ul>
+        <div class="foot"><span class="price">${price}</span>${link}</div>`;
+      return el;
+    }
+
+    const grid = document.getElementById("parts");
+    parts.forEach((p, i) => grid.appendChild(card(p, i)));
+    reused.forEach(p => document.getElementById("reused").appendChild(card(p)));
+    document.getElementById("count").textContent = parts.length;
+
+    // Price share bar + legend
+    const split = document.getElementById("split");
+    const legend = document.getElementById("legend");
+    parts.forEach((p, i) => {
+      const hue = 185 + (i / (parts.length - 1)) * 130;
+      const seg = document.createElement("span");
+      seg.style.flexGrow = p.price;
+      seg.style.setProperty("--hue", hue);
+      seg.title = `${p.type}: ${money(p.price)}`;
+      split.appendChild(seg);
+      const li = document.createElement("li");
+      li.style.setProperty("--hue", hue);
+      li.textContent = `${p.type} ${Math.round(p.price / sum * 100)}%`;
+      legend.appendChild(li);
+    });
+
+    // Saving bar, read from savings.json (updated by admin.html)
+    document.getElementById("goalAmt").textContent = money(sum);
+    fetch("savings.json?t=" + Date.now()).then(r => r.json()).then(d => {
+      const saved = Math.max(0, Number(d.saved) || 0);
+      const pct = Math.min(100, saved / sum * 100);
+      document.getElementById("savedAmt").textContent = money(saved);
+      document.getElementById("savedPct").textContent = "(" + Math.round(pct) + "%)";
+      document.getElementById("barFill").style.width = pct + "%";
+      document.getElementById("bar").setAttribute("aria-valuenow", Math.round(pct));
+    }).catch(() => {});
+
+    // Total counts up once on load
+    const totalEl = document.getElementById("total");
+    const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (still) {
+      totalEl.textContent = money(sum);
+    } else {
+      const start = performance.now(), dur = 1400;
+      (function tick(now) {
+        const t = Math.min((now - start) / dur, 1);
+        totalEl.textContent = money(sum * (1 - Math.pow(1 - t, 3)));
+        if (t < 1) requestAnimationFrame(tick);
+      })(start);
+    }
+  </script>
+</body>
+</html>
