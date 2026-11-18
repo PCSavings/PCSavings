@@ -9,6 +9,14 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <style>
+    .btn-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+    .btn-row .buy { margin-top: 0; }
+    .buy.alt { background: var(--magenta); color: var(--void); }
+    .buy.alt:hover { background: #ff8cc4; box-shadow: 0 0 20px rgba(255, 61, 154, 0.7); }
+    button.buy.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+    .buy.ghost:hover { background: transparent; color: var(--text); box-shadow: none; }
+  </style>
 </head>
 <body>
   <main class="narrow">
@@ -29,11 +37,18 @@
         <p class="big" id="current">$0.00</p>
 
         <form id="addForm">
-          <label for="amount">Amount to add</label>
-          <input id="amount" type="number" step="0.01" placeholder="20.00" required>
-          <button class="buy" type="submit">Add to saving</button>
+          <label for="amount">Amount</label>
+          <input id="amount" type="number" step="0.01" min="0" placeholder="20.00" required>
+          <div class="btn-row">
+            <button class="buy" type="submit">Add to saving</button>
+            <button class="buy alt" type="button" id="removeBtn">Remove from saving</button>
+          </div>
         </form>
-        <p class="muted small">Use a negative amount to fix a mistake.</p>
+
+        <div class="btn-row">
+          <button class="buy ghost" type="button" id="resetBtn">Reset to $0</button>
+        </div>
+
         <p id="msg" class="msg" role="status"></p>
         <textarea id="manual" rows="4" hidden readonly></textarea>
       </div>
@@ -57,9 +72,9 @@
   </main>
 
   <script>
-    // Change this password. Anyone who views this file's source can read it,
+    // Change these passwords. Anyone who views this file's source can read them,
     // so treat it as a casual lock, not real security.
-    const PASSWORDS = ["Wylie", "wylie", "doggie is the goat"];
+    const PASSWORDS = ["changeme", "changeme", "changeme"];
 
     const $ = id => document.getElementById(id);
     const money = n => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -82,12 +97,13 @@
       } catch { return 0; }
     }
 
-    async function addAmount(delta) {
+    // delta changes the saved amount. reset = true sets it to $0 instead.
+    async function changeAmount(delta, reset = false) {
       const c = cfg();
       const body = n => JSON.stringify({ saved: Math.round(n * 100) / 100, updated: new Date().toISOString() }, null, 2) + "\n";
 
       if (!(c.owner && c.repo && c.token)) {
-        const next = current + delta;
+        const next = reset ? 0 : Math.max(0, current + delta);
         $("manual").hidden = false;
         $("manual").value = body(next);
         $("setup").open = true;
@@ -101,7 +117,7 @@
       const g = await fetch(`${url}?ref=${branch}`, { headers });
       let sha, base = 0;
       if (g.ok) { const j = await g.json(); sha = j.sha; base = Number(JSON.parse(atob(j.content.replace(/\n/g, ""))).saved) || 0; }
-      const next = Math.max(0, base + delta);
+      const next = reset ? 0 : Math.max(0, base + delta);
       const p = await fetch(url, {
         method: "PUT", headers,
         body: JSON.stringify({ message: `Update saving to ${money(next)}`, content: btoa(body(next)), branch, sha })
@@ -109,33 +125,46 @@
       if (!p.ok) throw new Error((await p.json()).message || p.status);
       show(next);
       $("manual").hidden = true;
-      $("msg").textContent = `Saved. The site updates in about a minute.`;
+      $("msg").textContent = "Saved. The site updates in about a minute.";
+    }
+
+    async function run(delta, reset) {
+      $("msg").textContent = "Saving…";
+      try { await changeAmount(delta, reset); $("amount").value = ""; }
+      catch (err) { $("msg").textContent = "Couldn’t save: " + err.message; }
     }
 
     function unlock() {
       $("gate").hidden = true;
       $("panel").hidden = false;
-      sessionStorage.setItem("pcsite-ok", "1");
       const c = cfg();
       ["owner", "repo", "branch", "token"].forEach(k => $(k).value = c[k] || "");
       readCurrent().then(show);
     }
 
-    if (sessionStorage.getItem("pcsite-ok")) unlock();
-
     $("gateForm").addEventListener("submit", e => {
       e.preventDefault();
-      if ($("pw").value === PASSWORD) unlock();
+      if (PASSWORDS.includes($("pw").value)) unlock();
       else $("gateMsg").textContent = "Wrong password. Try again.";
     });
 
-    $("addForm").addEventListener("submit", async e => {
+    // Add
+    $("addForm").addEventListener("submit", e => {
       e.preventDefault();
-      const delta = parseFloat($("amount").value);
-      if (!isFinite(delta)) return;
-      $("msg").textContent = "Saving…";
-      try { await addAmount(delta); $("amount").value = ""; }
-      catch (err) { $("msg").textContent = "Couldn’t save: " + err.message; }
+      const amt = parseFloat($("amount").value);
+      if (isFinite(amt)) run(Math.abs(amt), false);
+    });
+
+    // Remove
+    $("removeBtn").addEventListener("click", () => {
+      if (!$("addForm").reportValidity()) return;
+      const amt = parseFloat($("amount").value);
+      if (isFinite(amt)) run(-Math.abs(amt), false);
+    });
+
+    // Reset to $0
+    $("resetBtn").addEventListener("click", () => {
+      if (confirm("Reset saving to $0.00?")) run(0, true);
     });
 
     $("cfgForm").addEventListener("submit", e => {
