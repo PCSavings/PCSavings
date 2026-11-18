@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="narrow">
+    <h1 class="admin-title">Admin</h1>
+
+    <section id="gate">
+      <form id="gateForm" class="panel">
+        <label for="pw">Password</label>
+        <input id="pw" type="password" autocomplete="current-password" required>
+        <button class="buy" type="submit">Unlock</button>
+        <p id="gateMsg" class="msg" role="alert"></p>
+      </form>
+    </section>
+
+    <section id="panel" hidden>
+      <div class="panel">
+        <p class="muted">Saved so far</p>
+        <p class="big" id="current">$0.00</p>
+
+        <form id="addForm">
+          <label for="amount">Amount to add</label>
+          <input id="amount" type="number" step="0.01" placeholder="20.00" required>
+          <button class="buy" type="submit">Add to saving</button>
+        </form>
+        <p class="muted small">Use a negative amount to fix a mistake.</p>
+        <p id="msg" class="msg" role="status"></p>
+        <textarea id="manual" rows="4" hidden readonly></textarea>
+      </div>
+
+      <details class="panel" id="setup">
+        <summary>GitHub connection</summary>
+        <p class="muted small">Needed once so this page can update savings.json in your repo. Saved only in this browser. Use a fine-grained token with Contents read and write access to this one repo.</p>
+        <form id="cfgForm">
+          <label for="owner">GitHub username</label>
+          <input id="owner" autocomplete="off">
+          <label for="repo">Repo name</label>
+          <input id="repo" autocomplete="off">
+          <label for="branch">Branch</label>
+          <input id="branch" placeholder="main" autocomplete="off">
+          <label for="token">Access token</label>
+          <input id="token" type="password" autocomplete="off">
+          <button class="buy" type="submit">Save connection</button>
+        </form>
+      </details>
+    </section>
+  </main>
+
+  <script>
+    // Change this password. Anyone who views this file's source can read it,
+    // so treat it as a casual lock, not real security.
+    const PASSWORD = "changeme";
+
+    const $ = id => document.getElementById(id);
+    const money = n => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+    const KEY = "pcsite-github";
+    const cfg = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
+    let current = 0;
+
+    function show(n) { current = n; $("current").textContent = money(n); }
+
+    async function readCurrent() {
+      const c = cfg();
+      try {
+        if (c.owner && c.repo && c.token) {
+          const r = await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/contents/savings.json?ref=${c.branch || "main"}`,
+            { headers: { Authorization: `Bearer ${c.token}`, Accept: "application/vnd.github+json" } });
+          if (r.ok) { const j = await r.json(); return Number(JSON.parse(atob(j.content.replace(/\n/g, ""))).saved) || 0; }
+        }
+        const r = await fetch("savings.json?t=" + Date.now());
+        return Number((await r.json()).saved) || 0;
+      } catch { return 0; }
+    }
+
+    async function addAmount(delta) {
+      const c = cfg();
+      const body = n => JSON.stringify({ saved: Math.round(n * 100) / 100, updated: new Date().toISOString() }, null, 2) + "\n";
+
+      if (!(c.owner && c.repo && c.token)) {
+        const next = current + delta;
+        $("manual").hidden = false;
+        $("manual").value = body(next);
+        $("setup").open = true;
+        $("msg").textContent = "Not connected to GitHub yet. Fill in the connection below, or paste this into savings.json yourself.";
+        return;
+      }
+
+      const url = `https://api.github.com/repos/${c.owner}/${c.repo}/contents/savings.json`;
+      const branch = c.branch || "main";
+      const headers = { Authorization: `Bearer ${c.token}`, Accept: "application/vnd.github+json" };
+      const g = await fetch(`${url}?ref=${branch}`, { headers });
+      let sha, base = 0;
+      if (g.ok) { const j = await g.json(); sha = j.sha; base = Number(JSON.parse(atob(j.content.replace(/\n/g, ""))).saved) || 0; }
+      const next = Math.max(0, base + delta);
+      const p = await fetch(url, {
+        method: "PUT", headers,
+        body: JSON.stringify({ message: `Update saving to ${money(next)}`, content: btoa(body(next)), branch, sha })
+      });
+      if (!p.ok) throw new Error((await p.json()).message || p.status);
+      show(next);
+      $("manual").hidden = true;
+      $("msg").textContent = `Saved. The site updates in about a minute.`;
+    }
+
+    function unlock() {
+      $("gate").hidden = true;
+      $("panel").hidden = false;
+      sessionStorage.setItem("pcsite-ok", "1");
+      const c = cfg();
+      ["owner", "repo", "branch", "token"].forEach(k => $(k).value = c[k] || "");
+      readCurrent().then(show);
+    }
+
+    if (sessionStorage.getItem("pcsite-ok")) unlock();
+
+    $("gateForm").addEventListener("submit", e => {
+      e.preventDefault();
+      if ($("pw").value === PASSWORD) unlock();
+      else $("gateMsg").textContent = "Wrong password. Try again.";
+    });
+
+    $("addForm").addEventListener("submit", async e => {
+      e.preventDefault();
+      const delta = parseFloat($("amount").value);
+      if (!isFinite(delta)) return;
+      $("msg").textContent = "Saving…";
+      try { await addAmount(delta); $("amount").value = ""; }
+      catch (err) { $("msg").textContent = "Couldn’t save: " + err.message; }
+    });
+
+    $("cfgForm").addEventListener("submit", e => {
+      e.preventDefault();
+      localStorage.setItem(KEY, JSON.stringify({
+        owner: $("owner").value.trim(), repo: $("repo").value.trim(),
+        branch: $("branch").value.trim(), token: $("token").value.trim()
+      }));
+      $("msg").textContent = "Connection saved. Try adding an amount.";
+      readCurrent().then(show);
+    });
+  </script>
+</body>
+</html>
